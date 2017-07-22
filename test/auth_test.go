@@ -59,7 +59,7 @@ func TestAuthFailNoDisconnectCB(t *testing.T) {
 	s := RunServerWithOptions(opts)
 	defer s.Shutdown()
 
-	copts := nats.DefaultOptions
+	copts := nats.DefaultOptions()
 	copts.Url = "nats://localhost:8232"
 	receivedDisconnectCB := int32(0)
 	copts.DisconnectedCB = func(nc *nats.Conn) {
@@ -97,7 +97,7 @@ func TestAuthFailAllowReconnect(t *testing.T) {
 
 	reconnectch := make(chan bool)
 
-	opts := nats.DefaultOptions
+	opts := nats.DefaultOptions()
 	opts.Servers = servers
 	opts.AllowReconnect = true
 	opts.NoRandomize = true
