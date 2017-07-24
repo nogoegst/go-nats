@@ -5,12 +5,12 @@ package main
 
 import (
 	"flag"
-//	"crypto/tls"
+	//	"crypto/tls"
 	"log"
 	"runtime"
 
 	"github.com/nogoegst/tlspin"
-	"github.com/nats-io/go-nats"
+	"github.com/nogoegst/go-nats"
 )
 
 // NOTE: Use tls scheme for TLS, e.g. nats-sub -s tls://demo.nats.io:4443 foo

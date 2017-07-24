@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/go-nats"
-	"github.com/nats-io/go-nats/encoders/builtin"
-	"github.com/nats-io/go-nats/test"
+	"github.com/nogoegst/go-nats"
+	"github.com/nogoegst/go-nats/encoders/builtin"
+	"github.com/nogoegst/go-nats/test"
 )
 
 const TEST_PORT = 8168

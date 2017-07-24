@@ -6,10 +6,10 @@ package main
 import (
 	"flag"
 	"log"
-//	"crypto/tls"
+	//	"crypto/tls"
 
 	"github.com/nogoegst/tlspin"
-	"github.com/nats-io/go-nats"
+	"github.com/nogoegst/go-nats"
 )
 
 // NOTE: Use tls scheme for TLS, e.g. nats-pub -s tls://demo.nats.io:4443 foo hello

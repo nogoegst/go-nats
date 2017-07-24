@@ -10,7 +10,7 @@ import (
 	"time"
 
 	// Default Encoders
-	. "github.com/nats-io/go-nats/encoders/builtin"
+	. "github.com/nogoegst/go-nats/encoders/builtin"
 )
 
 // Encoder interface is for all register encoders

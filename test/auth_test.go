@@ -9,7 +9,7 @@ import (
 
 	"github.com/nats-io/gnatsd/server"
 	"github.com/nats-io/gnatsd/test"
-	"github.com/nats-io/go-nats"
+	"github.com/nogoegst/go-nats"
 )
 
 func TestAuth(t *testing.T) {
