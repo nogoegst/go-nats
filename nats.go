@@ -22,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nats-io/go-nats/util"
 	"github.com/nats-io/nuid"
 )
 
@@ -54,8 +53,6 @@ const AUTHORIZATION_ERR = "authorization violation"
 // Errors
 var (
 	ErrConnectionClosed     = errors.New("nats: connection closed")
-	ErrSecureConnRequired   = errors.New("nats: secure connection required")
-	ErrSecureConnWanted     = errors.New("nats: secure connection not available")
 	ErrBadSubscription      = errors.New("nats: invalid subscription")
 	ErrTypeSubscription     = errors.New("nats: invalid subscription type")
 	ErrBadSubject           = errors.New("nats: invalid subject")
@@ -69,7 +66,6 @@ var (
 	ErrMaxPayload           = errors.New("nats: maximum payload exceeded")
 	ErrMaxMessages          = errors.New("nats: maximum messages delivered")
 	ErrSyncSubRequired      = errors.New("nats: illegal call on an async subscription")
-	ErrMultipleTLSConfigs   = errors.New("nats: multiple tls.Configs not allowed")
 	ErrNoInfoReceived       = errors.New("nats: protocol exception, INFO not received")
 	ErrReconnectBufExceeded = errors.New("nats: outbound buffer limit exceeded")
 	ErrInvalidConnection    = errors.New("nats: invalid connection")
@@ -92,6 +88,7 @@ func DefaultOptions() Options {
 		Dialer: &net.Dialer{
 			Timeout: DefaultTimeout,
 		},
+		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 	return opts
 }
@@ -149,12 +146,8 @@ type Options struct {
 	// validation of subjects.
 	Pedantic bool
 
-	// Secure enables TLS secure connections that skip server
-	// verification by default. NOT RECOMMENDED.
-	Secure bool
-
 	// TLSConfig is a custom TLS configuration to use for secure
-	// transports.
+	// transports. If nil all connections are made in plaintext.
 	TLSConfig *tls.Config
 
 	// AllowReconnect enables reconnection logic to be used when we
@@ -424,17 +417,16 @@ func Name(name string) Option {
 
 // Secure is an Option to enable TLS secure connections that skip server verification by default.
 // Pass a TLS Configuration for proper TLS.
-func Secure(tls ...*tls.Config) Option {
+func WithTLSConfig(tlsConfig *tls.Config) Option {
 	return func(o *Options) error {
-		o.Secure = true
-		// Use of variadic just simplifies testing scenarios. We only take the first one.
-		// fixme(DLC) - Could panic if more than one. Could also do TLS option.
-		if len(tls) > 1 {
-			return ErrMultipleTLSConfigs
-		}
-		if len(tls) == 1 {
-			o.TLSConfig = tls[0]
-		}
+		o.TLSConfig = tlsConfig.Clone()
+		return nil
+	}
+}
+
+func Insecure() Option {
+	return func(o *Options) error {
+		o.TLSConfig = nil
 		return nil
 	}
 }
@@ -458,7 +450,6 @@ func RootCAs(file ...string) Option {
 			o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 		}
 		o.TLSConfig.RootCAs = pool
-		o.Secure = true
 		return nil
 	}
 }
@@ -479,7 +470,6 @@ func ClientCert(certFile, keyFile string) Option {
 			o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 		}
 		o.TLSConfig.Certificates = []tls.Certificate{cert}
-		o.Secure = true
 		return nil
 	}
 }
@@ -831,7 +821,6 @@ func (nc *Conn) setupServerPool() error {
 	for _, srv := range nc.srvPool {
 		if srv.url.Scheme == tlsScheme {
 			// FIXME(dlc), this is for all in the pool, should be case by case.
-			nc.Opts.Secure = true
 			if nc.Opts.TLSConfig == nil {
 				nc.Opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 			}
@@ -897,27 +886,6 @@ func (nc *Conn) createConn() (err error) {
 	}
 	nc.bw = bufio.NewWriterSize(nc.conn, defaultBufSize)
 	return nil
-}
-
-// makeTLSConn will wrap an existing Conn using TLS
-func (nc *Conn) makeTLSConn() {
-	// Allow the user to configure their own tls.Config structure, otherwise
-	// default to InsecureSkipVerify.
-	// TODO(dlc) - We should make the more secure version the default.
-	if nc.Opts.TLSConfig != nil {
-		tlsCopy := util.CloneTLSConfig(nc.Opts.TLSConfig)
-		// If its blank we will override it with the current host
-		if tlsCopy.ServerName == _EMPTY_ {
-			h, _, _ := net.SplitHostPort(nc.url.Host)
-			tlsCopy.ServerName = h
-		}
-		nc.conn = tls.Client(nc.conn, tlsCopy)
-	} else {
-		nc.conn = tls.Client(nc.conn, &tls.Config{InsecureSkipVerify: true})
-	}
-	conn := nc.conn.(*tls.Conn)
-	conn.Handshake()
-	nc.bw = bufio.NewWriterSize(nc.conn, defaultBufSize)
 }
 
 // waitForExits will wait for all socket watcher Go routines to
@@ -1012,6 +980,20 @@ func (nc *Conn) processConnectInit() error {
 	// Set our status to connecting.
 	nc.status = CONNECTING
 
+	if nc.Opts.TLSConfig != nil {
+		tlsCopy := nc.Opts.TLSConfig.Clone()
+		// If its blank we will override it with the current host
+		if tlsCopy.ServerName == _EMPTY_ {
+			h, _, _ := net.SplitHostPort(nc.url.Host)
+			tlsCopy.ServerName = h
+		}
+		nc.conn = tls.Client(nc.conn, tlsCopy)
+		conn := nc.conn.(*tls.Conn)
+		if err := conn.Handshake(); err != nil {
+			return err
+		}
+		nc.bw = bufio.NewWriterSize(nc.conn, defaultBufSize)
+	}
 	// Process the INFO protocol received from the server
 	err := nc.processExpectedInfo()
 	if err != nil {
@@ -1082,27 +1064,6 @@ func (nc *Conn) connect() error {
 	return returnedErr
 }
 
-// This will check to see if the connection should be
-// secure. This can be dictated from either end and should
-// only be called after the INIT protocol has been received.
-func (nc *Conn) checkForSecure() error {
-	// Check to see if we need to engage TLS
-	o := nc.Opts
-
-	// Check for mismatch in setups
-	if o.Secure && !nc.info.TLSRequired {
-		return ErrSecureConnWanted
-	} else if nc.info.TLSRequired && !o.Secure {
-		return ErrSecureConnRequired
-	}
-
-	// Need to rewrap with bufio
-	if o.Secure {
-		nc.makeTLSConn()
-	}
-	return nil
-}
-
 // processExpectedInfo will look for the expected first INFO message
 // sent when a connection is established. The lock should be held entering.
 func (nc *Conn) processExpectedInfo() error {
@@ -1125,7 +1086,7 @@ func (nc *Conn) processExpectedInfo() error {
 		return err
 	}
 
-	return nc.checkForSecure()
+	return nil
 }
 
 // Sends a protocol control message by queuing into the bufio writer
@@ -1159,7 +1120,7 @@ func (nc *Conn) connectProto() (string, error) {
 	}
 	cinfo := connectInfo{o.Verbose, o.Pedantic,
 		user, pass, token,
-		o.Secure, o.Name, LangString, Version, clientProtoInfo}
+		o.TLSConfig != nil, o.Name, LangString, Version, clientProtoInfo}
 	b, err := json.Marshal(cinfo)
 	if err != nil {
 		return _EMPTY_, ErrJsonParse

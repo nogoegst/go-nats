@@ -6,7 +6,9 @@ package main
 import (
 	"flag"
 	"log"
+//	"crypto/tls"
 
+	"github.com/nogoegst/tlspin"
 	"github.com/nats-io/go-nats"
 )
 
@@ -27,7 +29,10 @@ func main() {
 		usage()
 	}
 
-	nc, err := nats.Connect(*urls)
+	//nc, err := nats.Connect(*urls, nats.Insecure())
+	tlsConfig, _ := tlspin.TLSClientConfig("whateverkey")
+	nc, err := nats.Connect(*urls, nats.WithTLSConfig(tlsConfig))
+	//nc, err := nats.Connect(*urls, nats.WithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
 	if err != nil {
 		log.Fatal(err)
 	}
